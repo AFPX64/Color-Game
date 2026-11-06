@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Great Guessing Game</title>
+<style>
+  /* Colores de cada tema */
+  :root {
+    --bg: #232323;
+    --line: transparent;
+    --toggle-bg: #f5f5f5;
+  }
+
+  body.light {
+    --bg: #f2f2f2;
+    --line: #d6d6d6;
+    --toggle-bg: #232323;
+  }
+
+  body {
+    background-color: var(--bg);
+    margin: 0;
+    font-family: "Montserrat", "Segoe UI", Arial, sans-serif;
+    transition: background-color 0.4s;
+  }
+
+  h1 {
+    background-color: steelblue;
+    color: white;
+    margin: 0;
+    padding: 24px 12px;
+    text-align: center;
+    text-transform: uppercase;
+    font-weight: normal;
+    line-height: 1.1;
+    transition: background-color 0.4s;
+  }
+
+  #colorDisplay {
+    display: block;
+    font-size: 200%;
+    margin: 8px 0;
+  }
+
+  #stripe {
+    background-color: white;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    height: 40px;
+    line-height: 40px;
+    text-align: center;
+  }
+
+  /* Botones sin aspecto clásico ni outline */
+  button {
+    background: none;
+    border: none;
+    color: steelblue;
+    font: inherit;
+    text-transform: uppercase;
+    height: 100%;
+    padding: 0 12px;
+    cursor: pointer;
+    outline: none;
+    transition: color 0.3s, background-color 0.3s;
+  }
+
+  button:hover,
+  button.selected {
+    background-color: steelblue;
+    color: white;
+  }
+
+  /* Botón de tema: claro en modo oscuro, oscuro en modo claro */
+  #themeToggle {
+    position: fixed;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    background-color: var(--toggle-bg);
+    font-size: 18px;
+    line-height: 36px;
+    transition: background-color 0.4s, transform 0.2s;
+  }
+
+  #themeToggle:hover {
+    background-color: var(--toggle-bg);
+    transform: scale(1.1);
+  }
+
+  /* Ancho fijo para que el mensaje no mueva a los otros elementos */
+  #message {
+    display: inline-block;
+    width: 170px;
+    color: #232323;
+    text-transform: uppercase;
+  }
+
+  #container {
+    display: flex;
+    flex-wrap: wrap;
+    max-width: 600px;
+    margin: 20px auto;
+  }
+
+  .square {
+    width: 30%;
+    aspect-ratio: 1;
+    margin: 1.66%;
+    border-radius: 15%;
+    cursor: pointer;
+    transition: background-color 0.5s;
+  }
+</style>
+</head>
+<body>
+
+<button id="themeToggle" aria-label="Cambiar tema">☀️</button>
+
+<h1>
+  The Great
+  <span id="colorDisplay">RGB</span>
+  Guessing Game
+</h1>
+
+<div id="stripe">
+  <button id="reset">Nuevos Colores</button>
+  <span id="message"></span>
+  <button class="mode">Easy</button>
+  <button class="mode selected">Hard</button>
+</div>
+
+<div id="container">
+  <div class="square"></div>
+  <div class="square"></div>
+  <div class="square"></div>
+  <div class="square"></div>
+  <div class="square"></div>
+  <div class="square"></div>
+</div>
+
+<script>
+  // Variables
+  let numSquares = 6;
+  let colors;
+  let pickedColor;
+
+  // Selectores
+  const squares = document.querySelectorAll(".square");
+  const colorDisplay = document.getElementById("colorDisplay");
+  const message = document.getElementById("message");
+  const h1 = document.querySelector("h1");
+  const resetButton = document.getElementById("reset");
+  const modeButtons = document.querySelectorAll(".mode");
+  const themeButton = document.getElementById("themeToggle");
+
+  resetButton.addEventListener("click", reset);
+  themeButton.addEventListener("click", toggleTheme);
+
+  // Cuando carga la página
+  function init() {
+    setupModeButtons();
+    setupSquares();
+    reset();
+  }
+
+  // Cambia entre tema oscuro y claro
+  function toggleTheme() {
+    document.body.classList.toggle("light");
+    const isLight = document.body.classList.contains("light");
+    themeButton.textContent = isLight ? "🌙" : "☀️";
+  }
+
+  // Botones Easy / Hard
+  function setupModeButtons() {
+    for (let i = 0; i < modeButtons.length; i++) {
+      modeButtons[i].addEventListener("click", function () {
+        for (let j = 0; j < modeButtons.length; j++) {
+          modeButtons[j].classList.remove("selected");
+        }
+        this.classList.add("selected");
+        numSquares = this.textContent === "Easy" ? 3 : 6;
+        reset();
+      });
+    }
+  }
+
+  // Click en cada cuadrado
+  function setupSquares() {
+    for (let i = 0; i < squares.length; i++) {
+      squares[i].addEventListener("click", function () {
+        const clickedColor = this.style.backgroundColor;
+        if (clickedColor === pickedColor) {
+          message.textContent = "¡Correcto!";
+          resetButton.textContent = "Play Again?";
+          h1.style.backgroundColor = pickedColor;
+          changeColors(pickedColor);
+        } else {
+          // Toma el color de fondo del tema actual
+          this.style.backgroundColor = "var(--bg)";
+          message.textContent = "Intentalo nuevamente";
+        }
+      });
+    }
+  }
+
+  // Reinicia el juego con nuevos colores
+  function reset() {
+    colors = generateRandomColors(numSquares);
+    pickedColor = pickColor();
+    colorDisplay.textContent = pickedColor;
+    resetButton.textContent = "Nuevos Colores";
+    message.textContent = "";
+    h1.style.backgroundColor = "";
+    for (let i = 0; i < squares.length; i++) {
+      if (colors[i]) {
+        squares[i].style.display = "block";
+        squares[i].style.backgroundColor = colors[i];
+      } else {
+        squares[i].style.display = "none";
+      }
+    }
+  }
+
+  // Pinta todos los cuadrados con el mismo color
+  function changeColors(color) {
+    for (let i = 0; i < squares.length; i++) {
+      squares[i].style.backgroundColor = color;
+    }
+  }
+
+  // Elige el color ganador del Arreglo
+  function pickColor() {
+    const random = Math.floor(Math.random() * colors.length);
+    return colors[random];
+  }
+
+  // Arma un Arreglo de colores random
+  function generateRandomColors(num) {
+    const arr = [];
+    for (let i = 0; i < num; i++) {
+      arr.push(randomColor());
+    }
+    return arr;
+  }
+
+  // Devuelve un color random: "rgb(240, 14, 128)"
+  function randomColor() {
+    const r = Math.floor(Math.random() * 256);
+    const g = Math.floor(Math.random() * 256);
+    const b = Math.floor(Math.random() * 256);
+    return "rgb(" + r + ", " + g + ", " + b + ")";
+  }
+
+  init();
+</script>
+
+</body>
+</html>
