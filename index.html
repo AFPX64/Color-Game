@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>The Great Guessing Game</title>
+<title>The Great Guessing Game - Ultimate Edition</title>
 <style>
   /* Colores de cada tema */
   :root {
@@ -56,9 +56,25 @@
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
     text-align: center;
+  }
+
+  /* Barra de herramientas secundaria (Contrarreloj, Formato Hex) */
+  #extras-bar {
+    background-color: rgba(255, 255, 255, 0.95);
+    border-bottom: 1px solid var(--line);
+    padding: 6px 12px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    align-items: center;
+    font-size: 0.85rem;
+  }
+
+  body.light #extras-bar {
+    background-color: #e6e6e6;
   }
 
   /* Botones sin aspecto clásico ni outline */
@@ -73,6 +89,7 @@
     cursor: pointer;
     outline: none;
     transition: color 0.3s, background-color 0.3s;
+    border-radius: 4px;
   }
 
   button:hover,
@@ -129,17 +146,17 @@
     top: 8px;
     left: 8px;
     z-index: 10;
-    background-color: rgba(0, 0, 0, 0.75);
+    background-color: rgba(0, 0, 0, 0.85);
     color: white;
     padding: 8px 12px;
     border-radius: 8px;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     line-height: 1.4;
     box-shadow: 0 4px 6px rgba(0,0,0,0.3);
   }
 
   body.light #scoreboard {
-    background-color: rgba(255, 255, 255, 0.9);
+    background-color: rgba(255, 255, 255, 0.95);
     color: #232323;
     border: 1px solid #d6d6d6;
   }
@@ -147,12 +164,13 @@
   /* Mensaje con ancho mínimo estático */
   #message {
     display: inline-block;
-    min-width: 190px;
+    min-width: 170px;
     text-align: center;
     color: #232323;
     text-transform: uppercase;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     white-space: nowrap;
+    font-weight: bold;
   }
 
   #container {
@@ -167,7 +185,11 @@
     aspect-ratio: 1;
     border-radius: 15%;
     cursor: pointer;
-    transition: background-color 0.5s;
+    transition: background-color 0.5s, transform 0.2s;
+  }
+
+  .square:hover {
+    transform: scale(0.97);
   }
 </style>
 </head>
@@ -178,6 +200,7 @@
   <div id="turnIndicator" style="display: none;">Turno: Jugador 1</div>
   <div id="p1Container">Puntos: <span id="p1Score">0</span></div>
   <div id="p2Container" style="display: none;">Jugador 2: <span id="p2Score">0</span> pts</div>
+  <div id="highScoreText" style="font-size: 0.75rem; color: #f1c40f; margin-top: 2px;">Récord: 0</div>
 </div>
 
 <button id="colorblindToggle" aria-label="Activar modo daltónico">👁️</button>
@@ -188,6 +211,11 @@
   <span id="colorDisplay">RGB</span>
   Guessing Game
 </h1>
+
+<div id="extras-bar">
+  <button id="timerToggleBtn">⏱️ Contrarreloj: OFF</button>
+  <button id="formatToggleBtn">🎨 Formato: RGB</button>
+</div>
 
 <div id="stripe">
   <button id="reset">Nuevos Colores</button>
@@ -211,17 +239,25 @@
 </div>
 
 <script>
-  // Variables de juego
+  // Variables de juego principales
   let numSquares = 6;
-  let colors;
-  let pickedColor;
+  let colors = [];
+  let pickedColor = "";
+  let currentModeName = "Hard";
   
   // Variables Multijugador y Puntuación
   let isMultiplayer = false;
-  let currentPlayer = 1; // 1 o 2
+  let currentPlayer = 1;
   let p1Score = 0;
   let p2Score = 0;
-  let currentMistakes = 0; // Errores cometidos en la ronda actual
+  let currentMistakes = 0;
+
+  // Nuevas Características
+  let isHexFormat = false;
+  let isTimeAttack = false;
+  let timeLeft = 45;
+  let timerInterval = null;
+  let highScores = JSON.parse(localStorage.getItem("guessingGameHighScores")) || {};
 
   // Selectores
   const squares = document.querySelectorAll(".square");
@@ -237,36 +273,70 @@
   const turnIndicator = document.getElementById("turnIndicator");
   const p1Container = document.getElementById("p1Container");
   const p2Container = document.getElementById("p2Container");
-  const p1ScoreSpan = document.getElementById("p1Score");
-  const p2ScoreSpan = document.getElementById("p2Score");
+  const highScoreText = document.getElementById("highScoreText");
+  const timerToggleBtn = document.getElementById("timerToggleBtn");
+  const formatToggleBtn = document.getElementById("formatToggleBtn");
 
-  resetButton.addEventListener("click", reset);
+  resetButton.addEventListener("click", () => { reset(); });
   themeButton.addEventListener("click", toggleTheme);
   colorblindButton.addEventListener("click", toggleColorblind);
   multiplayerToggle.addEventListener("click", toggleMultiplayer);
+  timerToggleBtn.addEventListener("click", toggleTimeAttack);
+  formatToggleBtn.addEventListener("click", toggleFormat);
 
-  // Cuando carga la página
+  // Inicialización
   function init() {
     setupModeButtons();
     setupSquares();
     reset();
+    updateHighScoreDisplay();
   }
 
-  // Cambiar entre tema oscuro y claro
+  // --- AUDIO SINTETIZADOR WEB API ---
+  function playSound(type) {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === "win") {
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } else if (type === "error") {
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(100, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      }
+    } catch(e) {
+      // Evitar errores si el navegador bloquea audio sin interacción previa
+    }
+  }
+
+  // Cambiar tema oscuro / claro
   function toggleTheme() {
     document.body.classList.toggle("light");
     const isLight = document.body.classList.contains("light");
     themeButton.textContent = isLight ? "🌙" : "☀️";
   }
 
-  // Activar o desactiva modo daltónico
+  // Modo daltónico
   function toggleColorblind() {
     document.body.classList.toggle("colorblind");
     const isColorblind = document.body.classList.contains("colorblind");
     colorblindButton.textContent = isColorblind ? "👁️‍🗨️" : "👁️";
   }
 
-  // Activar o desactivar Multijugador
+  // Multijugador
   function toggleMultiplayer() {
     isMultiplayer = !isMultiplayer;
     if (isMultiplayer) {
@@ -276,6 +346,8 @@
       turnIndicator.style.display = "block";
       p1Container.innerHTML = "Jugador 1: <span id='p1Score'>" + p1Score + "</span> pts";
       p2Container.style.display = "block";
+      highScoreText.style.display = "none";
+      if (isTimeAttack) toggleTimeAttack(); // Desactivar contrarreloj si hay multijugador
     } else {
       multiplayerToggle.textContent = "Modo Multi: OFF";
       multiplayerToggle.classList.remove("selected");
@@ -283,8 +355,94 @@
       turnIndicator.style.display = "none";
       p1Container.innerHTML = "Puntos: <span id='p1Score'>" + p1Score + "</span>";
       p2Container.style.display = "none";
+      highScoreText.style.display = "block";
     }
     reset();
+  }
+
+  // Formato RGB / HEX
+  function toggleFormat() {
+    isHexFormat = !isHexFormat;
+    formatToggleBtn.textContent = isHexFormat ? "🎨 Formato: HEX" : "🎨 Formato: RGB";
+    displayCurrentColor();
+  }
+
+  function rgbToHex(rgbStr) {
+    const match = rgbStr.match(/\d+/g);
+    if (!match) return rgbStr;
+    const r = parseInt(match[0]).toString(16).padStart(2, '0');
+    const g = parseInt(match[1]).toString(16).padStart(2, '0');
+    const b = parseInt(match[2]).toString(16).padStart(2, '0');
+    return `#${r}${g}${b}`.toUpperCase();
+  }
+
+  function displayCurrentColor() {
+    if (isHexFormat) {
+      colorDisplay.textContent = rgbToHex(pickedColor);
+    } else {
+      colorDisplay.textContent = pickedColor;
+    }
+  }
+
+  // Contrarreloj (Time Attack)
+  function toggleTimeAttack() {
+    if (isMultiplayer) return; // Incompatible con multijugador
+    isTimeAttack = !isTimeAttack;
+    if (isTimeAttack) {
+      timerToggleBtn.textContent = "⏱️ Tiempo: 45s";
+      timerToggleBtn.classList.add("selected");
+      p1Score = 0; // Reiniciar puntos para el reto
+      document.getElementById("p1Score").textContent = p1Score;
+      startTimer();
+    } else {
+      timerToggleBtn.textContent = "⏱️ Contrarreloj: OFF";
+      timerToggleBtn.classList.remove("selected");
+      stopTimer();
+    }
+    reset();
+  }
+
+  function startTimer() {
+    stopTimer();
+    timeLeft = 45;
+    timerToggleBtn.textContent = `⏱️ Tiempo: ${timeLeft}s`;
+    timerInterval = setInterval(() => {
+      timeLeft--;
+      timerToggleBtn.textContent = `⏱️ Tiempo: ${timeLeft}s`;
+      if (timeLeft <= 0) {
+        stopTimer();
+        message.textContent = "¡TIEMPO AGOTADO! Fin del reto.";
+        lockBoard();
+      }
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = null;
+  }
+
+  function lockBoard() {
+    for (let i = 0; i < squares.length; i++) {
+      squares[i].style.pointerEvents = "none";
+    }
+  }
+
+  // High Scores Locales
+  function updateHighScoreDisplay() {
+    let currentHigh = highScores[currentModeName] || 0;
+    highScoreText.textContent = `Récord (${currentModeName}): ${currentHigh} pts`;
+  }
+
+  function checkHighScore() {
+    if (isMultiplayer || isTimeAttack) return;
+    let currentHigh = highScores[currentModeName] || 0;
+    if (p1Score > currentHigh) {
+      highScores[currentModeName] = p1Score;
+      localStorage.setItem("guessingGameHighScores", JSON.stringify(highScores));
+      updateHighScoreDisplay();
+      message.textContent = "🎉 ¡NUEVO RÉCORD PERSONAL! 🎉";
+    }
   }
 
   // Botones de Modo de Juego
@@ -296,13 +454,14 @@
         }
         this.classList.add("selected");
         
-        const modeText = this.textContent.trim();
-        if (modeText === "Baby") numSquares = 2;
-        else if (modeText === "Easy") numSquares = 3;
-        else if (modeText === "Hard") numSquares = 6;
-        else if (modeText === "Hardcore") numSquares = 12;
-        else if (modeText === "Madness") numSquares = 24;
+        currentModeName = this.textContent.trim();
+        if (currentModeName === "Baby") numSquares = 2;
+        else if (currentModeName === "Easy") numSquares = 3;
+        else if (currentModeName === "Hard") numSquares = 6;
+        else if (currentModeName === "Hardcore") numSquares = 12;
+        else if (currentModeName === "Madness") numSquares = 24;
 
+        updateHighScoreDisplay();
         reset();
       });
     }
@@ -311,49 +470,63 @@
   // Click en cada cuadrado
   function setupSquares() {
     for (let i = 0; i < squares.length; i++) {
+      squares[i].style.pointerEvents = "auto";
       squares[i].addEventListener("click", function () {
-        // Si el cuadrado ya fue presionado (inactivo), ignorar
         if (this.style.backgroundColor === "var(--bg)" || this.style.display === "none") return;
 
         const clickedColor = this.style.backgroundColor;
 
         if (clickedColor === pickedColor) {
-          // ¡Acertó! Calcular puntos basados en la dificultad y restar penalización por errores
+          // ¡Acertó!
+          playSound("win");
           let baseMultiplier = 1;
-          if (numSquares === 3) baseMultiplier = 2;     // Easy
-          if (numSquares === 6) baseMultiplier = 4;     // Hard
-          if (numSquares === 12) baseMultiplier = 8;    // Hardcore
-          if (numSquares === 24) baseMultiplier = 16;   // Madness
+          if (numSquares === 3) baseMultiplier = 2;
+          if (numSquares === 6) baseMultiplier = 4;
+          if (numSquares === 12) baseMultiplier = 8;
+          if (numSquares === 24) baseMultiplier = 16;
 
           let maxPoints = numSquares * 10 * baseMultiplier;
           let penaltyPerMistake = 10 * baseMultiplier;
-          // Garantiza al menos 1 punto
           let earnedPoints = Math.max(1, maxPoints - (currentMistakes * penaltyPerMistake));
 
           if (isMultiplayer) {
             if (currentPlayer === 1) {
               p1Score += earnedPoints;
               document.getElementById("p1Score").textContent = p1Score;
-              message.textContent = `¡Jugador 1 gana +${earnedPoints} pts!`;
+              message.textContent = `¡J1 gana +${earnedPoints} pts!`;
             } else {
               p2Score += earnedPoints;
               p2ScoreSpan.textContent = p2Score;
-              message.textContent = `¡Jugador 2 gana +${earnedPoints} pts!`;
+              message.textContent = `¡J2 gana +${earnedPoints} pts!`;
             }
           } else {
             p1Score += earnedPoints;
             document.getElementById("p1Score").textContent = p1Score;
             message.textContent = `¡Correcto! (+${earnedPoints} pts)`;
+            if (isTimeAttack) {
+              timeLeft += 5; // Bonificación de tiempo
+              timerToggleBtn.textContent = `⏱️ Tiempo: ${timeLeft}s`;
+            }
+            checkHighScore();
           }
 
           resetButton.textContent = "Play Again?";
           h1.style.backgroundColor = pickedColor;
           changeColors(pickedColor);
+          lockBoard();
+          if (isTimeAttack && timeLeft > 0) {
+            setTimeout(() => reset(), 1200); // Auto-reinicio rápido en contrarreloj
+          }
 
         } else {
-          // Falló: oculta el bloque incorrecto y aumenta el contador de errores
+          // Falló
+          playSound("error");
           this.style.backgroundColor = "var(--bg)";
           currentMistakes++;
+          if (isTimeAttack) {
+            timeLeft = Math.max(0, timeLeft - 3); // Penalización de tiempo
+            timerToggleBtn.textContent = `⏱️ Tiempo: ${timeLeft}s`;
+          }
 
           if (isMultiplayer) {
             currentPlayer = currentPlayer === 1 ? 2 : 1;
@@ -367,26 +540,26 @@
     }
   }
 
-  // Reinicia el juego con nuevos colores y escala los bloques
+  // Reiniciar juego
   function reset() {
     colors = generateRandomColors(numSquares);
     pickedColor = pickColor();
-    colorDisplay.textContent = pickedColor;
+    displayCurrentColor();
     resetButton.textContent = "Nuevos Colores";
     message.textContent = "";
     h1.style.backgroundColor = "";
-    currentMistakes = 0; // Reiniciar errores de la ronda actual
+    currentMistakes = 0;
 
     if (isMultiplayer) {
       turnIndicator.textContent = `Turno: Jugador ${currentPlayer}`;
     }
 
     for (let i = 0; i < squares.length; i++) {
+      squares[i].style.pointerEvents = "auto";
       if (colors[i]) {
         squares[i].style.display = "block";
         squares[i].style.backgroundColor = colors[i];
 
-        // Escalado dinámico según el modo
         if (numSquares === 2 || numSquares === 3 || numSquares === 6) {
           squares[i].style.width = "30%";
           squares[i].style.margin = "1.66%";
@@ -403,20 +576,17 @@
     }
   }
 
-  // Pinta todos los cuadrados con el mismo color
   function changeColors(color) {
     for (let i = 0; i < squares.length; i++) {
       squares[i].style.backgroundColor = color;
     }
   }
 
-  // Elige el color ganador del Arreglo
   function pickColor() {
     const random = Math.floor(Math.random() * colors.length);
     return colors[random];
   }
 
-  // Arma un Arreglo de colores random
   function generateRandomColors(num) {
     const arr = [];
     for (let i = 0; i < num; i++) {
@@ -425,7 +595,6 @@
     return arr;
   }
 
-  // Devuelve un color random: "rgb(240, 14, 128)"
   function randomColor() {
     const r = Math.floor(Math.random() * 256);
     const g = Math.floor(Math.random() * 256);
