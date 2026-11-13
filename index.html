@@ -18,6 +18,11 @@
     --toggle-bg: #232323;
   }
 
+  /* Modo Daltónico: Eleva la dificultad a escala de grises y contraste extremo */
+  body.colorblind {
+    filter: grayscale(100%) contrast(160%);
+  }
+
   body {
     background-color: var(--bg);
     margin: 0;
@@ -47,9 +52,11 @@
     background-color: white;
     border-top: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
-    height: 40px;
+    padding: 8px 12px;
     display: flex;
-    justify-content: space-around;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
     align-items: center;
     text-align: center;
   }
@@ -61,8 +68,8 @@
     color: steelblue;
     font: inherit;
     text-transform: uppercase;
-    height: 100%;
-    padding: 0 12px;
+    height: 32px;
+    padding: 0 10px;
     cursor: pointer;
     outline: none;
     transition: color 0.3s, background-color 0.3s;
@@ -74,7 +81,7 @@
     color: white;
   }
 
-  /* Botón de tema: claro en modo oscuro, oscuro en modo claro */
+  /* Botón de tema (Oscuro/Claro) */
   #themeToggle {
     position: fixed;
     top: 8px;
@@ -95,10 +102,31 @@
     transform: scale(1.1);
   }
 
-  /* Mensaje con ancho mínimo estático para que no mueva los elementos */
+  /* Botón de Modo Daltónico */
+  #colorblindToggle {
+    position: fixed;
+    top: 8px;
+    right: 52px;
+    z-index: 10;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    background-color: var(--toggle-bg);
+    font-size: 18px;
+    line-height: 36px;
+    transition: background-color 0.4s, transform 0.2s;
+  }
+
+  #colorblindToggle:hover {
+    background-color: var(--toggle-bg);
+    transform: scale(1.1);
+  }
+
+  /* Mensaje con ancho mínimo estático */
   #message {
     display: inline-block;
-    min-width: 190px;
+    min-width: 170px;
     text-align: center;
     color: #232323;
     text-transform: uppercase;
@@ -111,12 +139,11 @@
     flex-wrap: wrap;
     max-width: 600px;
     margin: 20px auto;
+    justify-content: center;
   }
 
   .square {
-    width: 30%;
     aspect-ratio: 1;
-    margin: 1.66%;
     border-radius: 15%;
     cursor: pointer;
     transition: background-color 0.5s;
@@ -125,6 +152,7 @@
 </head>
 <body>
 
+<button id="colorblindToggle" aria-label="Activar modo daltónico">👁️</button>
 <button id="themeToggle" aria-label="Cambiar tema">☀️</button>
 
 <h1>
@@ -136,17 +164,21 @@
 <div id="stripe">
   <button id="reset">Nuevos Colores</button>
   <span id="message"></span>
+  <button class="mode">Baby</button>
   <button class="mode">Easy</button>
   <button class="mode selected">Hard</button>
+  <button class="mode">Hardcore</button>
+  <button class="mode">Madness</button>
 </div>
 
 <div id="container">
-  <div class="square"></div>
-  <div class="square"></div>
-  <div class="square"></div>
-  <div class="square"></div>
-  <div class="square"></div>
-  <div class="square"></div>
+  <!-- 24 cuadrados para soportar hasta el modo Madness -->
+  <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+  <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+  <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+  <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+  <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
+  <div class="square"></div><div class="square"></div><div class="square"></div><div class="square"></div>
 </div>
 
 <script>
@@ -163,9 +195,11 @@
   const resetButton = document.getElementById("reset");
   const modeButtons = document.querySelectorAll(".mode");
   const themeButton = document.getElementById("themeToggle");
+  const colorblindButton = document.getElementById("colorblindToggle");
 
   resetButton.addEventListener("click", reset);
   themeButton.addEventListener("click", toggleTheme);
+  colorblindButton.addEventListener("click", toggleColorblind);
 
   // Cuando carga la página
   function init() {
@@ -181,7 +215,14 @@
     themeButton.textContent = isLight ? "🌙" : "☀️";
   }
 
-  // Botones Easy / Hard
+  // Activa o desactiva el modo daltónico
+  function toggleColorblind() {
+    document.body.classList.toggle("colorblind");
+    const isColorblind = document.body.classList.contains("colorblind");
+    colorblindButton.textContent = isColorblind ? "👁️‍🗨️" : "👁️";
+  }
+
+  // Botones de Modo de Juego (Baby, Easy, Hard, Hardcore, Madness)
   function setupModeButtons() {
     for (let i = 0; i < modeButtons.length; i++) {
       modeButtons[i].addEventListener("click", function () {
@@ -189,7 +230,14 @@
           modeButtons[j].classList.remove("selected");
         }
         this.classList.add("selected");
-        numSquares = this.textContent === "Easy" ? 3 : 6;
+        
+        const modeText = this.textContent.trim();
+        if (modeText === "Baby") numSquares = 2;
+        else if (modeText === "Easy") numSquares = 3;
+        else if (modeText === "Hard") numSquares = 6;
+        else if (modeText === "Hardcore") numSquares = 12;
+        else if (modeText === "Madness") numSquares = 24;
+
         reset();
       });
     }
@@ -206,7 +254,6 @@
           h1.style.backgroundColor = pickedColor;
           changeColors(pickedColor);
         } else {
-          // Toma el color de fondo del tema actual
           this.style.backgroundColor = "var(--bg)";
           message.textContent = "Intentalo nuevamente";
         }
@@ -214,7 +261,7 @@
     }
   }
 
-  // Reinicia el juego con nuevos colores
+  // Reinicia el juego con nuevos colores y escala los bloques
   function reset() {
     colors = generateRandomColors(numSquares);
     pickedColor = pickColor();
@@ -222,10 +269,23 @@
     resetButton.textContent = "Nuevos Colores";
     message.textContent = "";
     h1.style.backgroundColor = "";
+
     for (let i = 0; i < squares.length; i++) {
       if (colors[i]) {
         squares[i].style.display = "block";
         squares[i].style.backgroundColor = colors[i];
+
+        // Escalado dinámico según el modo para que quepan en pantalla
+        if (numSquares === 2 || numSquares === 3 || numSquares === 6) {
+          squares[i].style.width = "30%";
+          squares[i].style.margin = "1.66%";
+        } else if (numSquares === 12) {
+          squares[i].style.width = "22%";
+          squares[i].style.margin = "1.5%";
+        } else if (numSquares === 24) {
+          squares[i].style.width = "14%";
+          squares[i].style.margin = "1%";
+        }
       } else {
         squares[i].style.display = "none";
       }
