@@ -123,10 +123,31 @@
     transform: scale(1.1);
   }
 
+  /* Marcador General (Esquina superior izquierda) */
+  #scoreboard {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    z-index: 10;
+    background-color: rgba(0, 0, 0, 0.75);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  }
+
+  body.light #scoreboard {
+    background-color: rgba(255, 255, 255, 0.9);
+    color: #232323;
+    border: 1px solid #d6d6d6;
+  }
+
   /* Mensaje con ancho mínimo estático */
   #message {
     display: inline-block;
-    min-width: 170px;
+    min-width: 190px;
     text-align: center;
     color: #232323;
     text-transform: uppercase;
@@ -152,6 +173,13 @@
 </head>
 <body>
 
+<div id="scoreboard">
+  <div id="sbTitle">🏆 <b>Puntuación</b></div>
+  <div id="turnIndicator" style="display: none;">Turno: Jugador 1</div>
+  <div id="p1Container">Puntos: <span id="p1Score">0</span></div>
+  <div id="p2Container" style="display: none;">Jugador 2: <span id="p2Score">0</span> pts</div>
+</div>
+
 <button id="colorblindToggle" aria-label="Activar modo daltónico">👁️</button>
 <button id="themeToggle" aria-label="Cambiar tema">☀️</button>
 
@@ -164,6 +192,7 @@
 <div id="stripe">
   <button id="reset">Nuevos Colores</button>
   <span id="message"></span>
+  <button id="multiplayerToggle">Modo Multi: OFF</button>
   <button class="mode">Baby</button>
   <button class="mode">Easy</button>
   <button class="mode selected">Hard</button>
@@ -182,10 +211,17 @@
 </div>
 
 <script>
-  // Variables
+  // Variables de juego
   let numSquares = 6;
   let colors;
   let pickedColor;
+  
+  // Variables Multijugador y Puntuación
+  let isMultiplayer = false;
+  let currentPlayer = 1; // 1 o 2
+  let p1Score = 0;
+  let p2Score = 0;
+  let currentMistakes = 0; // Errores cometidos en la ronda actual
 
   // Selectores
   const squares = document.querySelectorAll(".square");
@@ -196,10 +232,18 @@
   const modeButtons = document.querySelectorAll(".mode");
   const themeButton = document.getElementById("themeToggle");
   const colorblindButton = document.getElementById("colorblindToggle");
+  const multiplayerToggle = document.getElementById("multiplayerToggle");
+  const sbTitle = document.getElementById("sbTitle");
+  const turnIndicator = document.getElementById("turnIndicator");
+  const p1Container = document.getElementById("p1Container");
+  const p2Container = document.getElementById("p2Container");
+  const p1ScoreSpan = document.getElementById("p1Score");
+  const p2ScoreSpan = document.getElementById("p2Score");
 
   resetButton.addEventListener("click", reset);
   themeButton.addEventListener("click", toggleTheme);
   colorblindButton.addEventListener("click", toggleColorblind);
+  multiplayerToggle.addEventListener("click", toggleMultiplayer);
 
   // Cuando carga la página
   function init() {
@@ -208,21 +252,42 @@
     reset();
   }
 
-  // Cambia entre tema oscuro y claro
+  // Cambiar entre tema oscuro y claro
   function toggleTheme() {
     document.body.classList.toggle("light");
     const isLight = document.body.classList.contains("light");
     themeButton.textContent = isLight ? "🌙" : "☀️";
   }
 
-  // Activa o desactiva el modo daltónico
+  // Activar o desactiva modo daltónico
   function toggleColorblind() {
     document.body.classList.toggle("colorblind");
     const isColorblind = document.body.classList.contains("colorblind");
     colorblindButton.textContent = isColorblind ? "👁️‍🗨️" : "👁️";
   }
 
-  // Botones de Modo de Juego (Baby, Easy, Hard, Hardcore, Madness)
+  // Activar o desactivar Multijugador
+  function toggleMultiplayer() {
+    isMultiplayer = !isMultiplayer;
+    if (isMultiplayer) {
+      multiplayerToggle.textContent = "Modo Multi: ON";
+      multiplayerToggle.classList.add("selected");
+      sbTitle.innerHTML = "👥 <b>Multijugador</b>";
+      turnIndicator.style.display = "block";
+      p1Container.innerHTML = "Jugador 1: <span id='p1Score'>" + p1Score + "</span> pts";
+      p2Container.style.display = "block";
+    } else {
+      multiplayerToggle.textContent = "Modo Multi: OFF";
+      multiplayerToggle.classList.remove("selected");
+      sbTitle.innerHTML = "🏆 <b>Puntuación</b>";
+      turnIndicator.style.display = "none";
+      p1Container.innerHTML = "Puntos: <span id='p1Score'>" + p1Score + "</span>";
+      p2Container.style.display = "none";
+    }
+    reset();
+  }
+
+  // Botones de Modo de Juego
   function setupModeButtons() {
     for (let i = 0; i < modeButtons.length; i++) {
       modeButtons[i].addEventListener("click", function () {
@@ -247,15 +312,56 @@
   function setupSquares() {
     for (let i = 0; i < squares.length; i++) {
       squares[i].addEventListener("click", function () {
+        // Si el cuadrado ya fue presionado (inactivo), ignorar
+        if (this.style.backgroundColor === "var(--bg)" || this.style.display === "none") return;
+
         const clickedColor = this.style.backgroundColor;
+
         if (clickedColor === pickedColor) {
-          message.textContent = "¡Correcto!";
+          // ¡Acertó! Calcular puntos basados en la dificultad y restar penalización por errores
+          let baseMultiplier = 1;
+          if (numSquares === 3) baseMultiplier = 2;     // Easy
+          if (numSquares === 6) baseMultiplier = 4;     // Hard
+          if (numSquares === 12) baseMultiplier = 8;    // Hardcore
+          if (numSquares === 24) baseMultiplier = 16;   // Madness
+
+          let maxPoints = numSquares * 10 * baseMultiplier;
+          let penaltyPerMistake = 10 * baseMultiplier;
+          // Garantiza al menos 1 punto
+          let earnedPoints = Math.max(1, maxPoints - (currentMistakes * penaltyPerMistake));
+
+          if (isMultiplayer) {
+            if (currentPlayer === 1) {
+              p1Score += earnedPoints;
+              document.getElementById("p1Score").textContent = p1Score;
+              message.textContent = `¡Jugador 1 gana +${earnedPoints} pts!`;
+            } else {
+              p2Score += earnedPoints;
+              p2ScoreSpan.textContent = p2Score;
+              message.textContent = `¡Jugador 2 gana +${earnedPoints} pts!`;
+            }
+          } else {
+            p1Score += earnedPoints;
+            document.getElementById("p1Score").textContent = p1Score;
+            message.textContent = `¡Correcto! (+${earnedPoints} pts)`;
+          }
+
           resetButton.textContent = "Play Again?";
           h1.style.backgroundColor = pickedColor;
           changeColors(pickedColor);
+
         } else {
+          // Falló: oculta el bloque incorrecto y aumenta el contador de errores
           this.style.backgroundColor = "var(--bg)";
-          message.textContent = "Intentalo nuevamente";
+          currentMistakes++;
+
+          if (isMultiplayer) {
+            currentPlayer = currentPlayer === 1 ? 2 : 1;
+            turnIndicator.textContent = `Turno: Jugador ${currentPlayer}`;
+            message.textContent = `¡Falló! Turno de J${currentPlayer}`;
+          } else {
+            message.textContent = "Inténtalo nuevamente (-puntos)";
+          }
         }
       });
     }
@@ -269,13 +375,18 @@
     resetButton.textContent = "Nuevos Colores";
     message.textContent = "";
     h1.style.backgroundColor = "";
+    currentMistakes = 0; // Reiniciar errores de la ronda actual
+
+    if (isMultiplayer) {
+      turnIndicator.textContent = `Turno: Jugador ${currentPlayer}`;
+    }
 
     for (let i = 0; i < squares.length; i++) {
       if (colors[i]) {
         squares[i].style.display = "block";
         squares[i].style.backgroundColor = colors[i];
 
-        // Escalado dinámico según el modo para que quepan en pantalla
+        // Escalado dinámico según el modo
         if (numSquares === 2 || numSquares === 3 || numSquares === 6) {
           squares[i].style.width = "30%";
           squares[i].style.margin = "1.66%";
